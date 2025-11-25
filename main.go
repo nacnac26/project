@@ -74,7 +74,21 @@ func handleEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 type MetricsResponse struct {
-	EventName   string `json:"event_name"`
+	EventName   string          `json:"event_name"`
+	TotalCount  int             `json:"total_count"`
+	UniqueUsers int             `json:"unique_users"`
+	ByChannel   []ChannelMetric `json:"by_channel,omitempty"`
+	ByTime      []TimeMetric    `json:"by_time,omitempty"`
+}
+
+type ChannelMetric struct {
+	Channel     string `json:"channel"`
+	TotalCount  int    `json:"total_count"`
+	UniqueUsers int    `json:"unique_users"`
+}
+
+type TimeMetric struct {
+	Period      string `json:"period"`
 	TotalCount  int    `json:"total_count"`
 	UniqueUsers int    `json:"unique_users"`
 }
@@ -92,31 +106,89 @@ func handleMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fromStr := r.URL.Query().Get("from")
-	toStr := r.URL.Query().Get("to")
+	where := "event_name = $1"
+	args := []interface{}{eventName}
+
+	if from := r.URL.Query().Get("from"); from != "" {
+		fromInt, err := strconv.ParseInt(from, 10, 64)
+		if err != nil {
+			http.Error(w, "Invalid from parameter", http.StatusBadRequest)
+			return
+		}
+		args = append(args, fromInt)
+		where += " AND timestamp >= $" + strconv.Itoa(len(args))
+	}
+	if to := r.URL.Query().Get("to"); to != "" {
+		toInt, err := strconv.ParseInt(to, 10, 64)
+		if err != nil {
+			http.Error(w, "Invalid to parameter", http.StatusBadRequest)
+			return
+		}
+		args = append(args, toInt)
+		where += " AND timestamp <= $" + strconv.Itoa(len(args))
+	}
 
 	var metrics MetricsResponse
 	metrics.EventName = eventName
 
-	query := `SELECT COUNT(*), COUNT(DISTINCT user_id) FROM events WHERE event_name = $1`
-	args := []interface{}{eventName}
-
-	if fromStr != "" {
-		from, _ := strconv.ParseInt(fromStr, 10, 64)
-		query += ` AND timestamp >= $2`
-		args = append(args, from)
-	}
-	if toStr != "" {
-		to, _ := strconv.ParseInt(toStr, 10, 64)
-		query += ` AND timestamp <= $` + strconv.Itoa(len(args)+1)
-		args = append(args, to)
-	}
-
+	query := "SELECT COUNT(*), COUNT(DISTINCT user_id) FROM events WHERE " + where
 	err := db.QueryRow(query, args...).Scan(&metrics.TotalCount, &metrics.UniqueUsers)
 	if err != nil {
 		log.Println("DB error:", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
+	}
+
+	// Group by
+	switch r.URL.Query().Get("group_by") {
+	case "channel":
+		rows, err := db.Query("SELECT channel, COUNT(*), COUNT(DISTINCT user_id) FROM events WHERE "+where+" GROUP BY channel", args...)
+		if err != nil {
+			log.Println("DB error:", err)
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var cm ChannelMetric
+			if err := rows.Scan(&cm.Channel, &cm.TotalCount, &cm.UniqueUsers); err != nil {
+				log.Println("Scan error:", err)
+				continue
+			}
+			metrics.ByChannel = append(metrics.ByChannel, cm)
+		}
+	case "daily":
+		rows, err := db.Query("SELECT TO_CHAR(TO_TIMESTAMP(timestamp), 'YYYY-MM-DD'), COUNT(*), COUNT(DISTINCT user_id) FROM events WHERE "+where+" GROUP BY TO_CHAR(TO_TIMESTAMP(timestamp), 'YYYY-MM-DD')", args...)
+		if err != nil {
+			log.Println("DB error:", err)
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var tm TimeMetric
+			if err := rows.Scan(&tm.Period, &tm.TotalCount, &tm.UniqueUsers); err != nil {
+				log.Println("Scan error:", err)
+				continue
+			}
+			metrics.ByTime = append(metrics.ByTime, tm)
+		}
+	case "hourly":
+		rows, err := db.Query("SELECT TO_CHAR(TO_TIMESTAMP(timestamp), 'YYYY-MM-DD HH24:00'), COUNT(*), COUNT(DISTINCT user_id) FROM events WHERE "+where+" GROUP BY TO_CHAR(TO_TIMESTAMP(timestamp), 'YYYY-MM-DD HH24:00')", args...)
+		if err != nil {
+			log.Println("DB error:", err)
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var tm TimeMetric
+			if err := rows.Scan(&tm.Period, &tm.TotalCount, &tm.UniqueUsers); err != nil {
+				log.Println("Scan error:", err)
+				continue
+			}
+			metrics.ByTime = append(metrics.ByTime, tm)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
