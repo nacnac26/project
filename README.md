@@ -19,5 +19,5 @@ make run
 ```bash
 curl -X POST http://localhost:8080/events -d '{"event_name":"product_view","user_id":"user_123","timestamp":1723475612}'
 
-curl http://localhost:8080/metrics
+curl "http://localhost:8080/metrics?event_name=product_view"
 ```

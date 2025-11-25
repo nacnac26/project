@@ -72,12 +72,35 @@ func handleEvents(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"status":"ok"}`))
 }
 
+type MetricsResponse struct {
+	EventName   string `json:"event_name"`
+	TotalCount  int    `json:"total_count"`
+	UniqueUsers int    `json:"unique_users"`
+}
+
 func handleMetrics(w http.ResponseWriter, r *http.Request) {
 	log.Println("GET /metrics")
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"metrics":[]}`))
+
+	eventName := r.URL.Query().Get("event_name")
+	if eventName == "" {
+		http.Error(w, "event_name is required", http.StatusBadRequest)
+		return
+	}
+
+	var metrics MetricsResponse
+	metrics.EventName = eventName
+
+	err := db.QueryRow(`SELECT COUNT(*), COUNT(DISTINCT user_id) FROM events WHERE event_name = $1`, eventName).Scan(&metrics.TotalCount, &metrics.UniqueUsers)
+	if err != nil {
+		log.Println("DB error:", err)
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(metrics)
 }
