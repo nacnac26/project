@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/lib/pq"
 )
@@ -91,10 +92,27 @@ func handleMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fromStr := r.URL.Query().Get("from")
+	toStr := r.URL.Query().Get("to")
+
 	var metrics MetricsResponse
 	metrics.EventName = eventName
 
-	err := db.QueryRow(`SELECT COUNT(*), COUNT(DISTINCT user_id) FROM events WHERE event_name = $1`, eventName).Scan(&metrics.TotalCount, &metrics.UniqueUsers)
+	query := `SELECT COUNT(*), COUNT(DISTINCT user_id) FROM events WHERE event_name = $1`
+	args := []interface{}{eventName}
+
+	if fromStr != "" {
+		from, _ := strconv.ParseInt(fromStr, 10, 64)
+		query += ` AND timestamp >= $2`
+		args = append(args, from)
+	}
+	if toStr != "" {
+		to, _ := strconv.ParseInt(toStr, 10, 64)
+		query += ` AND timestamp <= $` + strconv.Itoa(len(args)+1)
+		args = append(args, to)
+	}
+
+	err := db.QueryRow(query, args...).Scan(&metrics.TotalCount, &metrics.UniqueUsers)
 	if err != nil {
 		log.Println("DB error:", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)

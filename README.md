@@ -20,4 +20,5 @@ make run
 curl -X POST http://localhost:8080/events -d '{"event_name":"product_view","user_id":"user_123","timestamp":1723475612}'
 
 curl "http://localhost:8080/metrics?event_name=product_view"
+curl "http://localhost:8080/metrics?event_name=product_view&from=1723475000&to=1723476000"
 ```
