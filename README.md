@@ -1,1 +1,8 @@
-# project
+# Event Ingestion Service
+
+## Run PostgreSQL
+
+```bash
+docker build -t events-postgres ./docker/postgres
+docker run -d -p 5432:5432 -e POSTGRES_DB=events_db -e POSTGRES_USER=events_user -e POSTGRES_PASSWORD=events_password events-postgres
+```
