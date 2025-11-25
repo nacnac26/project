@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/lib/pq"
 )
@@ -64,6 +65,10 @@ func handleEvents(w http.ResponseWriter, r *http.Request) {
 		event.EventName, event.Channel, event.CampaignID, event.UserID, event.Timestamp, pq.Array(event.Tags), string(metadataJSON))
 
 	if err != nil {
+		if strings.Contains(err.Error(), "duplicate") {
+			http.Error(w, "Duplicate event", http.StatusConflict)
+			return
+		}
 		log.Println("DB error:", err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return

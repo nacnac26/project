@@ -6,5 +6,6 @@ CREATE TABLE events (
     user_id VARCHAR(255) NOT NULL,
     timestamp BIGINT NOT NULL,
     tags TEXT[],
-    metadata TEXT
+    metadata TEXT,
+    UNIQUE(event_name, user_id, timestamp, channel)
 );
