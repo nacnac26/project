@@ -46,6 +46,6 @@ func (h *EventHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusAccepted)
 	w.Write([]byte(`{"status":"ok"}`))
 }
