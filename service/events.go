@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+const (
+	batchSize    = 100
+	batchTimeout = 100 * time.Millisecond
+)
+
 var (
 	ErrMissingFields   = errors.New("missing required fields")
 	ErrFutureTimestamp = errors.New("timestamp cannot be in the future")
@@ -30,16 +35,36 @@ func NewEventService(repo *repository.EventRepository) *EventService {
 
 func (s *EventService) startWorkers(count int) {
 	for i := 0; i < count; i++ {
-		go s.worker()
+		go s.batchWorker()
 	}
 }
 
-func (s *EventService) worker() {
-	for event := range s.eventCh {
-		err := s.repo.Insert(event)
-		if err != nil {
-			log.Println("Worker insert error:", err)
+func (s *EventService) batchWorker() {
+	batch := make([]model.Event, 0, batchSize)
+	timer := time.NewTimer(batchTimeout)
+
+	for {
+		select {
+		case event := <-s.eventCh:
+			batch = append(batch, event)
+			if len(batch) >= batchSize {
+				s.flushBatch(batch)
+				batch = batch[:0]
+				timer.Reset(batchTimeout)
+			}
+		case <-timer.C:
+			if len(batch) > 0 {
+				s.flushBatch(batch)
+				batch = batch[:0]
+			}
+			timer.Reset(batchTimeout)
 		}
+	}
+}
+
+func (s *EventService) flushBatch(batch []model.Event) {
+	if err := s.repo.InsertBatch(batch); err != nil {
+		log.Println("Batch insert error:", err)
 	}
 }
 

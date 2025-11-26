@@ -26,6 +26,28 @@ func (r *EventRepository) Insert(event model.Event) error {
 	return err
 }
 
+func (r *EventRepository) InsertBatch(events []model.Event) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	query := `INSERT INTO events (event_name, channel, campaign_id, user_id, timestamp, tags, metadata) VALUES `
+	args := []interface{}{}
+
+	for i, event := range events {
+		metadataJSON, _ := json.Marshal(event.Metadata)
+		base := i * 7
+		query += "($" + strconv.Itoa(base+1) + ", $" + strconv.Itoa(base+2) + ", $" + strconv.Itoa(base+3) + ", $" + strconv.Itoa(base+4) + ", $" + strconv.Itoa(base+5) + ", $" + strconv.Itoa(base+6) + ", $" + strconv.Itoa(base+7) + ")"
+		if i < len(events)-1 {
+			query += ", "
+		}
+		args = append(args, event.EventName, event.Channel, event.CampaignID, event.UserID, event.Timestamp, pq.Array(event.Tags), string(metadataJSON))
+	}
+
+	_, err := r.db.Exec(query, args...)
+	return err
+}
+
 func (r *EventRepository) GetMetrics(eventName string, from, to int64, groupBy string) (model.MetricsResponse, error) {
 	var metrics model.MetricsResponse
 	metrics.EventName = eventName
