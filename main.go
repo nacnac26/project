@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -23,6 +24,10 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
+
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(20)
+	db.SetConnMaxLifetime(5 * time.Minute)
 
 	repo := repository.NewEventRepository(db)
 	svc := service.NewEventService(repo)

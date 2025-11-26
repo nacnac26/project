@@ -37,11 +37,11 @@ func (h *EventHandler) Handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Missing required fields", http.StatusBadRequest)
 		case errors.Is(err, service.ErrFutureTimestamp):
 			http.Error(w, "Timestamp cannot be in the future", http.StatusBadRequest)
-		case errors.Is(err, service.ErrDuplicateEvent):
-			http.Error(w, "Duplicate event", http.StatusConflict)
+		case errors.Is(err, service.ErrBufferFull):
+			http.Error(w, "Server busy, try again later", http.StatusServiceUnavailable)
 		default:
-			log.Println("DB error:", err)
-			http.Error(w, "DB error", http.StatusInternalServerError)
+			log.Println("Error:", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
 		}
 		return
 	}

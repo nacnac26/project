@@ -4,22 +4,43 @@ import (
 	"errors"
 	"event-ingestion/model"
 	"event-ingestion/repository"
-	"strings"
+	"log"
 	"time"
 )
 
 var (
-	ErrMissingFields    = errors.New("missing required fields")
-	ErrFutureTimestamp  = errors.New("timestamp cannot be in the future")
-	ErrDuplicateEvent   = errors.New("duplicate event")
+	ErrMissingFields   = errors.New("missing required fields")
+	ErrFutureTimestamp = errors.New("timestamp cannot be in the future")
+	ErrBufferFull      = errors.New("buffer full, try again later")
 )
 
 type EventService struct {
-	repo *repository.EventRepository
+	repo    *repository.EventRepository
+	eventCh chan model.Event
 }
 
 func NewEventService(repo *repository.EventRepository) *EventService {
-	return &EventService{repo: repo}
+	svc := &EventService{
+		repo:    repo,
+		eventCh: make(chan model.Event, 10000),
+	}
+	svc.startWorkers(20)
+	return svc
+}
+
+func (s *EventService) startWorkers(count int) {
+	for i := 0; i < count; i++ {
+		go s.worker()
+	}
+}
+
+func (s *EventService) worker() {
+	for event := range s.eventCh {
+		err := s.repo.Insert(event)
+		if err != nil {
+			log.Println("Worker insert error:", err)
+		}
+	}
 }
 
 func (s *EventService) CreateEvent(event model.Event) error {
@@ -31,15 +52,12 @@ func (s *EventService) CreateEvent(event model.Event) error {
 		return ErrFutureTimestamp
 	}
 
-	err := s.repo.Insert(event)
-	if err != nil {
-		if strings.Contains(err.Error(), "duplicate") {
-			return ErrDuplicateEvent
-		}
-		return err
+	select {
+	case s.eventCh <- event:
+		return nil
+	default:
+		return ErrBufferFull
 	}
-
-	return nil
 }
 
 func (s *EventService) GetMetrics(eventName string, from, to int64, groupBy string) (model.MetricsResponse, error) {
