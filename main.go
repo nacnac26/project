@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -60,6 +61,11 @@ func handleEvents(w http.ResponseWriter, r *http.Request) {
 	// Validation
 	if event.EventName == "" || event.UserID == "" || event.Timestamp == 0 {
 		http.Error(w, "Missing required fields", http.StatusBadRequest)
+		return
+	}
+
+	if event.Timestamp > time.Now().Unix() {
+		http.Error(w, "Timestamp cannot be in the future", http.StatusBadRequest)
 		return
 	}
 
