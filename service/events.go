@@ -5,6 +5,7 @@ import (
 	"event-ingestion/model"
 	"event-ingestion/repository"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -20,16 +21,20 @@ var (
 )
 
 type EventService struct {
-	repo    *repository.EventRepository
-	eventCh chan model.Event
+	repo         *repository.EventRepository
+	eventCh      chan model.Event
+	metricsCache map[string]model.MetricsResponse
+	cacheMu      sync.RWMutex
 }
 
 func NewEventService(repo *repository.EventRepository) *EventService {
 	svc := &EventService{
-		repo:    repo,
-		eventCh: make(chan model.Event, 10000),
+		repo:         repo,
+		eventCh:      make(chan model.Event, 10000),
+		metricsCache: make(map[string]model.MetricsResponse),
 	}
 	svc.startWorkers(20)
+	go svc.refreshMetricsLoop()
 	return svc
 }
 
@@ -90,5 +95,41 @@ func (s *EventService) GetMetrics(eventName string, from, to int64, groupBy stri
 		return model.MetricsResponse{}, ErrMissingFields
 	}
 
+	if from == 0 && to == 0 && groupBy == "" {
+		s.cacheMu.RLock()
+		if cached, ok := s.metricsCache[eventName]; ok {
+			log.Println("Serving metrics for", eventName, "from cache")
+			s.cacheMu.RUnlock()
+			return cached, nil
+		}
+		s.cacheMu.RUnlock()
+	}
+
 	return s.repo.GetMetrics(eventName, from, to, groupBy)
+}
+
+func (s *EventService) refreshMetricsLoop() {
+	ticker := time.NewTicker(20 * time.Second)
+	s.refreshMetrics()
+	for range ticker.C {
+		s.refreshMetrics()
+	}
+}
+
+func (s *EventService) refreshMetrics() {
+	rows, err := s.repo.GetAllEventNames()
+	if err != nil {
+		log.Println("Failed to get event names:", err)
+		return
+	}
+
+	for _, eventName := range rows {
+		metrics, err := s.repo.GetMetrics(eventName, 0, 0, "")
+		if err != nil {
+			continue
+		}
+		s.cacheMu.Lock()
+		s.metricsCache[eventName] = metrics
+		s.cacheMu.Unlock()
+	}
 }

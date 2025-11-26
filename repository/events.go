@@ -114,3 +114,21 @@ func (r *EventRepository) GetMetrics(eventName string, from, to int64, groupBy s
 
 	return metrics, nil
 }
+
+func (r *EventRepository) GetAllEventNames() ([]string, error) {
+	rows, err := r.db.Query("SELECT DISTINCT event_name FROM events")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names, nil
+}
