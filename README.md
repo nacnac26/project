@@ -1,35 +1,34 @@
 # Event Ingestion Service
 
-## Run with Docker Compose
+A simple event tracking API built with Go and PostgreSQL.
+
+## How to Run
+
+### Docker Compose
 
 ```bash
 docker-compose up --build
 ```
 
-## Run Locally
+## API Endpoints
+
+### POST /events
+
+Send an event to the system.
 
 ```bash
-# PostgreSQL
-docker build -t events-postgres ./docker/postgres
-docker run -d -p 5432:5432 -e POSTGRES_DB=events_db -e POSTGRES_USER=events_user -e POSTGRES_PASSWORD=events_password events-postgres
-
-# API
-make build
-make run
+curl -X POST http://localhost:8080/events \
+  -d '{"event_name":"product_view","channel":"web","user_id":"user_123","timestamp":1723475612}'
 ```
 
-## Examples
+Required fields: `event_name`, `user_id`, `timestamp`
 
-### Post Event
+### GET /metrics
 
-```bash
-curl -X POST http://localhost:8080/events -d '{"event_name":"product_view","channel":"web","user_id":"user_123","timestamp":1723475612}'
-```
-
-### Get Metrics
+Get event metrics. The `event_name` parameter is required.
 
 ```bash
-# Basic
+# Basic query (served from cache)
 curl "http://localhost:8080/metrics?event_name=product_view"
 
 # With time range
@@ -40,7 +39,25 @@ curl "http://localhost:8080/metrics?event_name=product_view&group_by=channel"
 
 # Group by daily
 curl "http://localhost:8080/metrics?event_name=product_view&group_by=daily"
-
-# Group by hourly
-curl "http://localhost:8080/metrics?event_name=product_view&group_by=hourly"
 ```
+
+## Design Decisions
+
+- **PostgreSQL**: I work with PostgreSQL so I chose it.
+- **Async Write**: Events are batched before writing. Faster response.
+- **Metrics Cache**: Simple queries use cache. Refreshes every 20 seconds.
+- **Idempotency**: Unique constraint prevents duplicates.
+
+## Trade-offs
+
+- Filtered queries hit the database.
+- Metrics can be 20 seconds stale.
+- No bulk endpoint.
+
+## What I Would Add
+
+- Swagger
+- More detailed error responses
+- Health check endpoint
+- Rate Limiting
+- Message queue
