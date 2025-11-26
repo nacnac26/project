@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -24,8 +25,13 @@ type Event struct {
 }
 
 func main() {
+	host := os.Getenv("DB_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+
 	var err error
-	db, err = sql.Open("postgres", "host=localhost port=5432 user=events_user password=events_password dbname=events_db sslmode=disable")
+	db, err = sql.Open("postgres", "host="+host+" port=5432 user=events_user password=events_password dbname=events_db sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
